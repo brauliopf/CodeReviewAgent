@@ -22,7 +22,7 @@ const reviewApp = new App({
  * @param payload - the payload of the webhook event
  * @returns the list of files edited in the PR ("ignorable" or not)
  */
-const getChangesPerFile = async (payload: WebhookEventMap["pull_request"]) => {
+const getEditedfiles = async (payload: WebhookEventMap["pull_request"]) => {
   try {
     // installation refers to the repository that installed the app
     // get the sdk to interact with the github api for that installation
@@ -61,7 +61,7 @@ async function handlePullRequestOpened({
       fullName: payload.repository.full_name,
       url: payload.repository.html_url,
     });
-    const files = await getChangesPerFile(payload);
+    const files = await getEditedfiles(payload);
     const review: Review = await processPullRequest(
       octokit,
       payload,
@@ -97,6 +97,6 @@ const server = http.createServer((req, res) => {
 
 // This creates a Node.js server that listens for incoming HTTP requests (including webhook payloads from GitHub) on the specified port. When the server receives a request, it executes the `middleware` function that you defined earlier. Once the server is running, it logs messages to the console to indicate that it is listening.
 server.listen(port, () => {
-  console.log(`Server is listening for events.`);
+  console.log(`Server is listening for events on port ${port}.`);
   console.log("Press Ctrl + C to quit.");
 });

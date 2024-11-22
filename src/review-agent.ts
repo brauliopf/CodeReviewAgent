@@ -45,6 +45,11 @@ export const reviewFiles = async (
   return feedback;
 };
 
+/**
+ * Filter out files that are not relevant to the review: review extension, ignored files, etc
+ * @param file - PRFile: the file to filter
+ * @returns a boolean
+ */
 const filterFile = (file: PRFile) => {
   const extensionsToIgnore = new Set<string>([
     "pdf",
@@ -69,16 +74,21 @@ const filterFile = (file: PRFile) => {
     "poetry.lock",
     "readme.md",
   ]);
+
+  // Check black-lists and provide feedback
+  // 1. Check if file is in ignore list
   const filename = file.filename.toLowerCase().split("/").pop();
   if (filename && filesToIgnore.has(filename)) {
     console.log(`Filtering out ignored file: ${file.filename}`);
     return false;
   }
+  // 2. Check if file has no extension
   const splitFilename = file.filename.toLowerCase().split(".");
   if (splitFilename.length <= 1) {
     console.log(`Filtering out file with no extension: ${file.filename}`);
     return false;
   }
+  // 3. Check if file has ignored extension
   const extension = splitFilename.pop()?.toLowerCase();
   if (extension && extensionsToIgnore.has(extension)) {
     console.log(
@@ -217,7 +227,7 @@ const processXMLSuggestions = async (feedbacks: string[]) => {
         .join("<code><![CDATA[")
         .split("</code>")
         .join("]]></code>");
-      console.log(fb);
+      console.log("processXMLSuggestions > feedback:\n", fb);
       return xmlParser.parseStringPromise(fb);
     })
   );
@@ -331,7 +341,7 @@ const xmlResponseBuilder = async (
 };
 
 /**
- * Higher-order function. Curried function to build the XML response
+ * Higher-order function. Curried function to build the XML response from feedbacks with variable owner and repoName
  * @param owner - string: the owner of the repository
  * @param repoName - the name of the repository
  * @returns a function that takes in feedbacks and returns a BuilderResponse
@@ -354,18 +364,22 @@ export const reviewChanges = async (
   convoBuilder: (diff: string) => ChatCompletionMessageParam[],
   responseBuilder: (responses: string[]) => Promise<BuilderResponse>
 ) => {
-  // "patch" here refers to the diff of the PR (old vs new)
-  // "buildPatchPrompt" creates `
+  // get diffs for each file (patch file)
+  // # "patch" here refers to the diff of the PR (old vs new)
+  // # "buildPatchPrompt" creates `
   const patchBuilder = buildPatchPrompt;
   const filteredFiles = files.filter((file) => filterFile(file));
+  // add token length metadata to each file
   filteredFiles.map((file) => {
     file.patchTokenLength = getTokenLength(patchBuilder(file));
   });
+
   // further subdivide if necessary, maybe group files by common extension?
   const patchesWithinModelLimit: PRFile[] = [];
   // these single file patches are larger than the full model context
   const patchesOutsideModelLimit: PRFile[] = [];
 
+  // check if patch + prompt is within the model limit and add to the appropriate list
   filteredFiles.forEach((file) => {
     const patchWithPromptWithinLimit = isConversationWithinLimit(
       constructPrompt([file], patchBuilder, convoBuilder)
@@ -519,10 +533,14 @@ const preprocessFile = async (
 };
 
 /**
- * Retry the review process with different builders
+ * For each file, try the review process with the XML builder. If it fails, use the text builder.
+ * By definition, the for loop will loop through XML and then non-XML.
+ * If it succeeds with the XML builder, it will return early and not try the non-XML builder.
+ * If it fails with the XML builder, it will log an error and fall back to the non-XML builder.
+ * The non-XML builder will always succeed.
  * @param files - PRFile[]: the files edited in the PR
  * @param builders - Builders[]: the builders to try
- * @returns a BuilderResponse
+ * @returns the output of the builder that succeeds (aka reviewed changes) for each file
  */
 const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
   for (const { convoBuilder, responseBuilder } of builders) {
@@ -572,17 +590,20 @@ export const processPullRequest = async (
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
+  const reviewComments = await reviewChangesRetry(filteredFiles, [
+    {
+      convoBuilder: getXMLReviewPrompt,
+      responseBuilder: curriedXMLResponseBuilder,
+    },
+    {
+      convoBuilder: getReviewPrompt,
+      responseBuilder: basicResponseBuilder,
+    },
+  ]);
+
+  console.dir({ reviewComments }, { depth: null });
+  let filteredInlineComments: CodeSuggestion[] = [];
   if (includeSuggestions) {
-    const reviewComments = await reviewChangesRetry(filteredFiles, [
-      {
-        convoBuilder: getXMLReviewPrompt,
-        responseBuilder: curriedXMLResponseBuilder,
-      },
-      {
-        convoBuilder: getReviewPrompt,
-        responseBuilder: basicResponseBuilder,
-      },
-    ]);
     let inlineComments: CodeSuggestion[] = [];
     if (reviewComments.structuredComments.length > 0) {
       console.log("STARTING INLINE COMMENT PROCESSING");
@@ -599,30 +620,13 @@ export const processPullRequest = async (
         })
       );
     }
-    const filteredInlineComments = inlineComments.filter(
+    filteredInlineComments = inlineComments.filter(
       (comment) => comment !== null
     );
-    return {
-      review: reviewComments,
-      suggestions: filteredInlineComments,
-    };
-  } else {
-    const [review] = await Promise.all([
-      reviewChangesRetry(filteredFiles, [
-        {
-          convoBuilder: getXMLReviewPrompt,
-          responseBuilder: curriedXMLResponseBuilder,
-        },
-        {
-          convoBuilder: getReviewPrompt,
-          responseBuilder: basicResponseBuilder,
-        },
-      ]),
-    ]);
-
-    return {
-      review,
-      suggestions: [],
-    };
   }
+
+  return {
+    review: reviewComments,
+    suggestions: filteredInlineComments,
+  };
 };
