@@ -109,6 +109,11 @@ const EXTENSIONS_TO_PARSERS: Map<string, AbstractParser> = new Map([
   ["jsx", new JavascriptParser()],
 ]);
 
+/**
+ * Get the parser for the file extension
+ * @param filename - string: the filename of the file
+ * @returns the parser for the file extension
+ */
 export const getParserForExtension = (filename: string) => {
   const fileExtension = filename.split(".").pop().toLowerCase();
   return EXTENSIONS_TO_PARSERS.get(fileExtension) || null;

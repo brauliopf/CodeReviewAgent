@@ -127,6 +127,12 @@ export const buildPatchPrompt = (file: PRFile) => {
   }
 };
 
+/**
+ * Get the review prompt
+ * Prompt key task: "... provide constructive and concise feedback for the PR, and also provide meaningful code suggestions..."
+ * @param diff - string: the diff of the PR (old vs new)
+ * @returns an array of ChatCompletionMessageParam
+ */
 export const getReviewPrompt = (diff: string): ChatCompletionMessageParam[] => {
   return [
     { role: "system", content: REVIEW_DIFF_PROMPT },
@@ -134,6 +140,12 @@ export const getReviewPrompt = (diff: string): ChatCompletionMessageParam[] => {
   ];
 };
 
+/**
+ * Get the XML review prompt
+ * Prompt key task: "... provide comprehensive and precise code enhancements... follow the valid Markdown syntax for GitHub, identifying the language they're written in, and enclosed within backticks (\`\`\`)."
+ * @param diff - string: the diff of the PR (old vs new)
+ * @returns an array of ChatCompletionMessageParam
+ */
 export const getXMLReviewPrompt = (
   diff: string
 ): ChatCompletionMessageParam[] => {

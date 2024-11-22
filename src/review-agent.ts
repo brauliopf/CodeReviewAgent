@@ -81,7 +81,9 @@ const filterFile = (file: PRFile) => {
   }
   const extension = splitFilename.pop()?.toLowerCase();
   if (extension && extensionsToIgnore.has(extension)) {
-    console.log(`Filtering out file with ignored extension: ${file.filename} (.${extension})`);
+    console.log(
+      `Filtering out file with ignored extension: ${file.filename} (.${extension})`
+    );
     return false;
   }
   return true;
@@ -305,6 +307,13 @@ const convertPRSuggestionToComment = (
   return comments;
 };
 
+/**
+ * Constructs an XML response for a pull request review
+ * @param owner - string: the owner of the repository
+ * @param repoName - string: the name of the repository
+ * @param feedbacks - string[]: the feedbacks from the review
+ * @returns a BuilderResponse
+ */
 const xmlResponseBuilder = async (
   owner: string,
   repoName: string,
@@ -321,6 +330,12 @@ const xmlResponseBuilder = async (
   return { comment: commentBlob, structuredComments: parsedXMLSuggestions };
 };
 
+/**
+ * Higher-order function. Curried function to build the XML response
+ * @param owner - string: the owner of the repository
+ * @param repoName - the name of the repository
+ * @returns a function that takes in feedbacks and returns a BuilderResponse
+ */
 const curriedXmlResponseBuilder = (owner: string, repoName: string) => {
   return (feedbacks: string[]) =>
     xmlResponseBuilder(owner, repoName, feedbacks);
@@ -339,6 +354,8 @@ export const reviewChanges = async (
   convoBuilder: (diff: string) => ChatCompletionMessageParam[],
   responseBuilder: (responses: string[]) => Promise<BuilderResponse>
 ) => {
+  // "patch" here refers to the diff of the PR (old vs new)
+  // "buildPatchPrompt" creates `
   const patchBuilder = buildPatchPrompt;
   const filteredFiles = files.filter((file) => filterFile(file));
   filteredFiles.map((file) => {
@@ -458,11 +475,18 @@ export const generateInlineComments = async (
   }
 };
 
+/**
+ * Handle scenario where file was created or deleted
+ * @param octokit
+ * @param payload
+ * @param file
+ */
 const preprocessFile = async (
   octokit: Octokit,
   payload: WebhookEventMap["pull_request"],
   file: PRFile
 ) => {
+  // Get the base and head branches of the PR
   const { base, head } = payload.pull_request;
   const baseBranch: BranchDetails = {
     name: base.ref,
@@ -474,18 +498,19 @@ const preprocessFile = async (
     sha: head.sha,
     url: payload.pull_request.url,
   };
-  // Handle scenario where file does not exist!!
+
+  // Find old and new versions of the file
   const [oldContents, currentContents] = await Promise.all([
     getGitFile(octokit, payload, baseBranch, file.filename),
     getGitFile(octokit, payload, currentBranch, file.filename),
   ]);
-
+  // if deleted
   if (oldContents.content != null) {
     file.old_contents = String.raw`${oldContents.content}`;
   } else {
     file.old_contents = null;
   }
-
+  // if created
   if (currentContents.content != null) {
     file.current_contents = String.raw`${currentContents.content}`;
   } else {
@@ -493,6 +518,12 @@ const preprocessFile = async (
   }
 };
 
+/**
+ * Retry the review process with different builders
+ * @param files - PRFile[]: the files edited in the PR
+ * @param builders - Builders[]: the builders to try
+ * @returns a BuilderResponse
+ */
 const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
   for (const { convoBuilder, responseBuilder } of builders) {
     try {
@@ -507,6 +538,14 @@ const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
   throw new Error("All convoBuilders failed.");
 };
 
+/**
+ * Filter out files to ignore and process the PR. Return a review with AI suggestions
+ * @param octokit - the octokit instance for the specific installation
+ * @param payload - the payload of the webhook event
+ * @param files - the list of files edited in the PR
+ * @param includeSuggestions - whether to include AI suggestions in the review
+ * @returns the review with AI suggestions
+ */
 export const processPullRequest = async (
   octokit: Octokit,
   payload: WebhookEventMap["pull_request"],
@@ -517,7 +556,9 @@ export const processPullRequest = async (
   const filteredFiles = files.filter((file) => filterFile(file));
   console.dir({ filteredFiles }, { depth: null });
   if (filteredFiles.length == 0) {
-    console.log("Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md");
+    console.log(
+      "Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md"
+    );
     return {
       review: null,
       suggestions: [],

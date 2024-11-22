@@ -1,8 +1,8 @@
 import { Octokit } from "@octokit/rest";
-import { createNodeMiddleware } from "@octokit/webhooks";
-import { WebhookEventMap } from "@octokit/webhooks-definitions/schema";
+import { createNodeMiddleware } from "@octokit/webhooks"; // verify authenticity of webhook event
+import { WebhookEventMap } from "@octokit/webhooks-definitions/schema"; // interface for webhook event (types)
 import * as http from "http";
-import { App } from "octokit";
+import { App } from "octokit"; // github sdk
 import { Review } from "./constants";
 import { env } from "./env";
 import { processPullRequest } from "./review-agent";
@@ -17,8 +17,15 @@ const reviewApp = new App({
   },
 });
 
+/**
+ * Get the edited files in the PR
+ * @param payload - the payload of the webhook event
+ * @returns the list of files edited in the PR ("ignorable" or not)
+ */
 const getChangesPerFile = async (payload: WebhookEventMap["pull_request"]) => {
   try {
+    // installation refers to the repository that installed the app
+    // get the sdk to interact with the github api for that installation
     const octokit = await reviewApp.getInstallationOctokit(
       payload.installation.id
     );
@@ -27,7 +34,7 @@ const getChangesPerFile = async (payload: WebhookEventMap["pull_request"]) => {
       repo: payload.repository.name,
       pull_number: payload.pull_request.number,
     });
-    console.dir({ files }, { depth: null });
+    console.dir({ files }, { depth: null }); // use console.dir to log/inspect objects
     return files;
   } catch (exc) {
     console.log("exc");
