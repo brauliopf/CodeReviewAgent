@@ -218,6 +218,11 @@ const processOutsideLimitFiles = (
   return processGroups;
 };
 
+/**
+ * Parses the feedbacks into an array of objects that implements PRSuggestion, and adds a <![CDATA[XXX]]> tag around the code block, to escape the code block from XML parser.
+ * @param feedbacks - string[]: the feedbacks from the review
+ * @returns an array of PRSuggestion objects
+ */
 const processXMLSuggestions = async (feedbacks: string[]) => {
   const xmlParser = new xml2js.Parser();
   const parsedSuggestions = await Promise.all(
@@ -227,14 +232,14 @@ const processXMLSuggestions = async (feedbacks: string[]) => {
         .join("<code><![CDATA[")
         .split("</code>")
         .join("]]></code>");
-      console.log("processXMLSuggestions > feedback:\n", fb);
       return xmlParser.parseStringPromise(fb);
     })
   );
-  // gets suggestion arrays [[suggestion], [suggestion]], then flattens
+  // builds the suggestion arrays [[suggestion], [suggestion]], then flattens it once
   const allSuggestions = parsedSuggestions
     .map((sug) => sug.review.suggestion)
     .flat(1);
+
   const suggestions: PRSuggestion[] = allSuggestions.map((rawSuggestion) => {
     const lines = rawSuggestion.code[0].trim().split("\n");
     lines[0] = lines[0].trim();
@@ -283,6 +288,13 @@ export const dedupSuggestions = (
   return Array.from(suggestionsMap.values());
 };
 
+/**
+ * Organizes PR suggestions by filename and formats them into a structured comment in a pull request review, complete with links to create GitHub issues for each suggestion.
+ * @param owner - string: the owner of the repository
+ * @param repo - string: the name of the repository
+ * @param suggestions - PRSuggestion[]: the suggestions to convert
+ * @returns an array of strings, each representing a comment on a pull request
+ */
 const convertPRSuggestionToComment = (
   owner: string,
   repo: string,
@@ -366,7 +378,7 @@ export const reviewChanges = async (
 ) => {
   // get diffs for each file (patch file)
   // # "patch" here refers to the diff of the PR (old vs new)
-  // # "buildPatchPrompt" creates `
+  // # "buildPatchPrompt" creates
   const patchBuilder = buildPatchPrompt;
   const filteredFiles = files.filter((file) => filterFile(file));
   // add token length metadata to each file
@@ -534,15 +546,15 @@ const preprocessFile = async (
 
 /**
  * For each file, try the review process with the XML builder. If it fails, use the text builder.
- * By definition, the for loop will loop through XML and then non-XML.
- * If it succeeds with the XML builder, it will return early and not try the non-XML builder.
- * If it fails with the XML builder, it will log an error and fall back to the non-XML builder.
- * The non-XML builder will always succeed.
  * @param files - PRFile[]: the files edited in the PR
  * @param builders - Builders[]: the builders to try
  * @returns the output of the builder that succeeds (aka reviewed changes) for each file
  */
 const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
+  // By definition, the for loop will loop through XML and then non-XML.
+  // If it succeeds with the XML builder, it will return early and not try the non-XML builder.
+  // If it fails with the XML builder, it will log an error and fall back to the non-XML builder.
+  // The non-XML builder will always succeed.
   for (const { convoBuilder, responseBuilder } of builders) {
     try {
       console.log(`Trying with convoBuilder: ${convoBuilder.name}.`);
@@ -591,6 +603,9 @@ export const processPullRequest = async (
   const repoName = payload.repository.name;
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
   const reviewComments = await reviewChangesRetry(filteredFiles, [
+    // convoBuilder takes a patch and returns a chat history object for chat completion.
+    // The chat history object has items with role "system" and "user".
+    // responseBuilder takes a list of LLM responses and returns a structured response (comment + structured feedback)
     {
       convoBuilder: getXMLReviewPrompt,
       responseBuilder: curriedXMLResponseBuilder,

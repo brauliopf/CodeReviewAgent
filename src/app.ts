@@ -29,6 +29,8 @@ const getEditedfiles = async (payload: WebhookEventMap["pull_request"]) => {
     const octokit = await reviewApp.getInstallationOctokit(
       payload.installation.id
     );
+    // lists the files in a specified pull request.
+    // https://octokit.github.io/rest.js/v21/#pulls-list-files
     const { data: files } = await octokit.rest.pulls.listFiles({
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
