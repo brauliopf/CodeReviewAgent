@@ -568,6 +568,8 @@ const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
   throw new Error("All convoBuilders failed.");
 };
 
+import { GROQ_MODEL } from "./llms/groq";
+import { groq } from "./llms/groq";
 /**
  * Filter out files to ignore and process the PR. Return a review with AI suggestions
  * @param octokit - the octokit instance for the specific installation
@@ -599,13 +601,33 @@ export const processPullRequest = async (
       return preprocessFile(octokit, payload, file);
     })
   );
+
+  const addDocsToStructuredComments = async (suggestion: any[]) => {
+    const response = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Your responsibility is to add documentation to code suggestions. The following JSON object contains: description of a change, a comment and the code that implements the change. Add documentation to the code suggestions if the code includes the entire function, or make inline comments if the functon header is not within reach. In your response, include only the [code:] block of the PRSuggestionImpl object. Include no preface text at all, only the necessary comments in the code block.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify(suggestion),
+        },
+      ],
+    });
+    return response.choices[0].message;
+  };
+
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
   const reviewComments = await reviewChangesRetry(filteredFiles, [
     // convoBuilder takes a patch and returns a chat history object for chat completion.
     // The chat history object has items with role "system" and "user".
-    // responseBuilder takes a list of LLM responses and returns a structured response (comment + structured feedback)
+    // responseBuilder takes the feedback (list of LLM responses) and returns a structured response (comment + structured feedback)
     {
       convoBuilder: getXMLReviewPrompt,
       responseBuilder: curriedXMLResponseBuilder,
@@ -616,6 +638,20 @@ export const processPullRequest = async (
     },
   ]);
 
+  // loop through reviewComments
+  console.log("reviewComments", reviewComments);
+
+  // use generative AI to add docstrings to the suggested code changes or edit the existing docstring
+  // loop through reviewComments.structuredComments and edit code tag with the new docstring if the new lines include the entire function, or make inline comments if the functon header is not within reach.
+  await Promise.all(
+    reviewComments.structuredComments.map(async (review) => {
+      const commentedCode = await addDocsToStructuredComments(review);
+      // replace the code tag with the commented code
+      // review.code = commentedCode;
+    })
+  );
+
+  console.log("reviewComments after adding docs");
   console.dir({ reviewComments }, { depth: null });
   let filteredInlineComments: CodeSuggestion[] = [];
   if (includeSuggestions) {
