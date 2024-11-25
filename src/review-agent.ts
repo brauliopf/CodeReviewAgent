@@ -45,6 +45,11 @@ export const reviewFiles = async (
   return feedback;
 };
 
+/**
+ * Filter out files that are not relevant to the review: review extension, ignored files, etc
+ * @param file - PRFile: the file to filter
+ * @returns a boolean
+ */
 const filterFile = (file: PRFile) => {
   const extensionsToIgnore = new Set<string>([
     "pdf",
@@ -69,19 +74,26 @@ const filterFile = (file: PRFile) => {
     "poetry.lock",
     "readme.md",
   ]);
+
+  // Check black-lists and provide feedback
+  // 1. Check if file is in ignore list
   const filename = file.filename.toLowerCase().split("/").pop();
   if (filename && filesToIgnore.has(filename)) {
     console.log(`Filtering out ignored file: ${file.filename}`);
     return false;
   }
+  // 2. Check if file has no extension
   const splitFilename = file.filename.toLowerCase().split(".");
   if (splitFilename.length <= 1) {
     console.log(`Filtering out file with no extension: ${file.filename}`);
     return false;
   }
+  // 3. Check if file has ignored extension
   const extension = splitFilename.pop()?.toLowerCase();
   if (extension && extensionsToIgnore.has(extension)) {
-    console.log(`Filtering out file with ignored extension: ${file.filename} (.${extension})`);
+    console.log(
+      `Filtering out file with ignored extension: ${file.filename} (.${extension})`
+    );
     return false;
   }
   return true;
@@ -206,6 +218,11 @@ const processOutsideLimitFiles = (
   return processGroups;
 };
 
+/**
+ * Parses the feedbacks into an array of objects that implements PRSuggestion, and adds a <![CDATA[XXX]]> tag around the code block, to escape the code block from XML parser.
+ * @param feedbacks - string[]: the feedbacks from the review
+ * @returns an array of PRSuggestion objects
+ */
 const processXMLSuggestions = async (feedbacks: string[]) => {
   const xmlParser = new xml2js.Parser();
   const parsedSuggestions = await Promise.all(
@@ -215,14 +232,14 @@ const processXMLSuggestions = async (feedbacks: string[]) => {
         .join("<code><![CDATA[")
         .split("</code>")
         .join("]]></code>");
-      console.log(fb);
       return xmlParser.parseStringPromise(fb);
     })
   );
-  // gets suggestion arrays [[suggestion], [suggestion]], then flattens
+  // builds the suggestion arrays [[suggestion], [suggestion]], then flattens it once
   const allSuggestions = parsedSuggestions
     .map((sug) => sug.review.suggestion)
     .flat(1);
+
   const suggestions: PRSuggestion[] = allSuggestions.map((rawSuggestion) => {
     const lines = rawSuggestion.code[0].trim().split("\n");
     lines[0] = lines[0].trim();
@@ -271,6 +288,13 @@ export const dedupSuggestions = (
   return Array.from(suggestionsMap.values());
 };
 
+/**
+ * Organizes PR suggestions by filename and formats them into a structured comment in a pull request review, complete with links to create GitHub issues for each suggestion.
+ * @param owner - string: the owner of the repository
+ * @param repo - string: the name of the repository
+ * @param suggestions - PRSuggestion[]: the suggestions to convert
+ * @returns an array of strings, each representing a comment on a pull request
+ */
 const convertPRSuggestionToComment = (
   owner: string,
   repo: string,
@@ -305,6 +329,13 @@ const convertPRSuggestionToComment = (
   return comments;
 };
 
+/**
+ * Constructs an XML response for a pull request review
+ * @param owner - string: the owner of the repository
+ * @param repoName - string: the name of the repository
+ * @param feedbacks - string[]: the feedbacks from the review
+ * @returns a BuilderResponse
+ */
 const xmlResponseBuilder = async (
   owner: string,
   repoName: string,
@@ -321,6 +352,12 @@ const xmlResponseBuilder = async (
   return { comment: commentBlob, structuredComments: parsedXMLSuggestions };
 };
 
+/**
+ * Higher-order function. Curried function to build the XML response from feedbacks with variable owner and repoName
+ * @param owner - string: the owner of the repository
+ * @param repoName - the name of the repository
+ * @returns a function that takes in feedbacks and returns a BuilderResponse
+ */
 const curriedXmlResponseBuilder = (owner: string, repoName: string) => {
   return (feedbacks: string[]) =>
     xmlResponseBuilder(owner, repoName, feedbacks);
@@ -339,16 +376,23 @@ export const reviewChanges = async (
   convoBuilder: (diff: string) => ChatCompletionMessageParam[],
   responseBuilder: (responses: string[]) => Promise<BuilderResponse>
 ) => {
+  // get diffs for each file (patch file)
+  // # "patch" here refers to the diff of the PR (old vs new)
+  // # "buildPatchPrompt" outputs the patch piece to be used in the prompt.
+  // # --defines the context strategy for the generative task
   const patchBuilder = buildPatchPrompt;
   const filteredFiles = files.filter((file) => filterFile(file));
+  // add token length metadata to each file
   filteredFiles.map((file) => {
     file.patchTokenLength = getTokenLength(patchBuilder(file));
   });
+
   // further subdivide if necessary, maybe group files by common extension?
   const patchesWithinModelLimit: PRFile[] = [];
   // these single file patches are larger than the full model context
   const patchesOutsideModelLimit: PRFile[] = [];
 
+  // check if patch + prompt is within the model limit and add to the appropriate list
   filteredFiles.forEach((file) => {
     const patchWithPromptWithinLimit = isConversationWithinLimit(
       constructPrompt([file], patchBuilder, convoBuilder)
@@ -360,7 +404,9 @@ export const reviewChanges = async (
     }
   });
 
-  console.log(`files within limits: ${patchesWithinModelLimit.length}`);
+  console.log(
+    `@reviewChanges files within limits: ${patchesWithinModelLimit.length}`
+  );
   const withinLimitsPatchGroups = processWithinLimitFiles(
     patchesWithinModelLimit,
     patchBuilder,
@@ -458,11 +504,18 @@ export const generateInlineComments = async (
   }
 };
 
+/**
+ * Handle scenario where file was created or deleted
+ * @param octokit
+ * @param payload
+ * @param file
+ */
 const preprocessFile = async (
   octokit: Octokit,
   payload: WebhookEventMap["pull_request"],
   file: PRFile
 ) => {
+  // Get the base and head branches of the PR
   const { base, head } = payload.pull_request;
   const baseBranch: BranchDetails = {
     name: base.ref,
@@ -474,18 +527,19 @@ const preprocessFile = async (
     sha: head.sha,
     url: payload.pull_request.url,
   };
-  // Handle scenario where file does not exist!!
+
+  // Find old and new versions of the file
   const [oldContents, currentContents] = await Promise.all([
     getGitFile(octokit, payload, baseBranch, file.filename),
     getGitFile(octokit, payload, currentBranch, file.filename),
   ]);
-
+  // if deleted
   if (oldContents.content != null) {
     file.old_contents = String.raw`${oldContents.content}`;
   } else {
     file.old_contents = null;
   }
-
+  // if created
   if (currentContents.content != null) {
     file.current_contents = String.raw`${currentContents.content}`;
   } else {
@@ -493,10 +547,22 @@ const preprocessFile = async (
   }
 };
 
+/**
+ * For each file, try the review process with the XML builder. If it fails, use the text builder.
+ * @param files - PRFile[]: the files edited in the PR
+ * @param builders - Builders[]: the builders to try
+ * @returns the output of the builder that succeeds (aka reviewed changes) for each file
+ */
 const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
+  // By definition, the for loop will loop through XML and then non-XML.
+  // If it succeeds with the XML builder, it will return early and not try the non-XML builder.
+  // If it fails with the XML builder, it will log an error and fall back to the non-XML builder.
+  // The non-XML builder will always succeed.
   for (const { convoBuilder, responseBuilder } of builders) {
     try {
-      console.log(`Trying with convoBuilder: ${convoBuilder.name}.`);
+      console.log(
+        `@reviewChangesRetry Trying with convoBuilder: ${convoBuilder.name}.`
+      );
       return await reviewChanges(files, convoBuilder, responseBuilder);
     } catch (error) {
       console.log(
@@ -507,6 +573,16 @@ const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
   throw new Error("All convoBuilders failed.");
 };
 
+import { GROQ_MODEL } from "./llms/groq";
+import { groq } from "./llms/groq";
+/**
+ * Filter out files to ignore and process the PR. Return a review with AI suggestions
+ * @param octokit - the octokit instance for the specific installation
+ * @param payload - the payload of the webhook event
+ * @param files - the list of files edited in the PR
+ * @param includeSuggestions - whether to include AI suggestions in the review
+ * @returns the review with AI suggestions
+ */
 export const processPullRequest = async (
   octokit: Octokit,
   payload: WebhookEventMap["pull_request"],
@@ -517,7 +593,9 @@ export const processPullRequest = async (
   const filteredFiles = files.filter((file) => filterFile(file));
   console.dir({ filteredFiles }, { depth: null });
   if (filteredFiles.length == 0) {
-    console.log("Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md");
+    console.log(
+      "Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md"
+    );
     return {
       review: null,
       suggestions: [],
@@ -528,20 +606,26 @@ export const processPullRequest = async (
       return preprocessFile(octokit, payload, file);
     })
   );
+
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
+  const reviewComments = await reviewChangesRetry(filteredFiles, [
+    // convoBuilder takes a patch and returns a chat history object for chat completion. The chat history object has items with role "system", with a prompt for the LLM, and "user", with the patch and .
+    // responseBuilder takes the feedback (list of LLM responses) and returns a structured response (comment + structured feedback)
+    {
+      convoBuilder: getXMLReviewPrompt,
+      responseBuilder: curriedXMLResponseBuilder,
+    },
+    {
+      convoBuilder: getReviewPrompt,
+      responseBuilder: basicResponseBuilder,
+    },
+  ]);
+
+  console.dir({ reviewComments }, { depth: null });
+  let filteredInlineComments: CodeSuggestion[] = [];
   if (includeSuggestions) {
-    const reviewComments = await reviewChangesRetry(filteredFiles, [
-      {
-        convoBuilder: getXMLReviewPrompt,
-        responseBuilder: curriedXMLResponseBuilder,
-      },
-      {
-        convoBuilder: getReviewPrompt,
-        responseBuilder: basicResponseBuilder,
-      },
-    ]);
     let inlineComments: CodeSuggestion[] = [];
     if (reviewComments.structuredComments.length > 0) {
       console.log("STARTING INLINE COMMENT PROCESSING");
@@ -558,30 +642,13 @@ export const processPullRequest = async (
         })
       );
     }
-    const filteredInlineComments = inlineComments.filter(
+    filteredInlineComments = inlineComments.filter(
       (comment) => comment !== null
     );
-    return {
-      review: reviewComments,
-      suggestions: filteredInlineComments,
-    };
-  } else {
-    const [review] = await Promise.all([
-      reviewChangesRetry(filteredFiles, [
-        {
-          convoBuilder: getXMLReviewPrompt,
-          responseBuilder: curriedXMLResponseBuilder,
-        },
-        {
-          convoBuilder: getReviewPrompt,
-          responseBuilder: basicResponseBuilder,
-        },
-      ]),
-    ]);
-
-    return {
-      review,
-      suggestions: [],
-    };
   }
+
+  return {
+    review: reviewComments,
+    suggestions: filteredInlineComments,
+  };
 };

@@ -120,8 +120,9 @@ export const getGitFile = async (
         },
       }
     );
-    //@ts-ignore
+
     const decodedContent = Buffer.from(
+      //@ts-ignore
       response.data.content,
       "base64"
     ).toString("utf8");

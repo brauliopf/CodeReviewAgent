@@ -119,6 +119,15 @@ export const buildSuggestionPrompt = (file: PRFile) => {
   return `## ${file.filename}\n\n${patchWithLines}`;
 };
 
+/**
+ * THIS IS IMPORTANT. Sets context for the completion. Builds the patch prompt for a file.
+ * If file is new, return a header with the filename and the patch (rawPatchStrategy).
+ * If file is old, try to use a parser:
+ * - if parser is found, return a header with the filename and the patch, but use some complex logic to define the size of the context.
+ * - if parser is not found, return a header with the filename and the patch, but with expanded lines (default to 5 lines).
+ * @param file - PRFile: the file to build the patch for
+ * @returns a string: the patch prompt
+ */
 export const buildPatchPrompt = (file: PRFile) => {
   if (file.old_contents == null) {
     return rawPatchStrategy(file);
@@ -127,6 +136,12 @@ export const buildPatchPrompt = (file: PRFile) => {
   }
 };
 
+/**
+ * Get the review prompt
+ * Prompt key task: "... provide constructive and concise feedback for the PR, and also provide meaningful code suggestions..."
+ * @param diff - string: the diff of the PR (old vs new)
+ * @returns an array of ChatCompletionMessageParam
+ */
 export const getReviewPrompt = (diff: string): ChatCompletionMessageParam[] => {
   return [
     { role: "system", content: REVIEW_DIFF_PROMPT },
@@ -134,6 +149,12 @@ export const getReviewPrompt = (diff: string): ChatCompletionMessageParam[] => {
   ];
 };
 
+/**
+ * Get the XML review prompt.
+ * Prompt key task: "... provide comprehensive and precise code enhancements... follow the valid Markdown syntax for GitHub, identifying the language they're written in, and enclosed within backticks (\`\`\`)."
+ * @param diff - string: the diff of the PR (old vs new)
+ * @returns an array of ChatCompletionMessageParam
+ */
 export const getXMLReviewPrompt = (
   diff: string
 ): ChatCompletionMessageParam[] => {
