@@ -120,7 +120,7 @@ export const buildSuggestionPrompt = (file: PRFile) => {
 };
 
 /**
- * THIS IS IMPORTANT. Sets context for the completion. Builds the patch prompt for a file
+ * THIS IS IMPORTANT. Sets context for the completion. Builds the patch prompt for a file.
  * If file is new, return a header with the filename and the patch (rawPatchStrategy).
  * If file is old, try to use a parser:
  * - if parser is found, return a header with the filename and the patch, but use some complex logic to define the size of the context.

@@ -36,7 +36,7 @@ const getEditedfiles = async (payload: WebhookEventMap["pull_request"]) => {
       repo: payload.repository.name,
       pull_number: payload.pull_request.number,
     });
-    console.dir({ files }, { depth: null }); // use console.dir to log/inspect objects
+
     return files;
   } catch (exc) {
     console.log("exc");

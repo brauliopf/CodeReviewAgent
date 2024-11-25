@@ -378,7 +378,8 @@ export const reviewChanges = async (
 ) => {
   // get diffs for each file (patch file)
   // # "patch" here refers to the diff of the PR (old vs new)
-  // # "buildPatchPrompt" creates
+  // # "buildPatchPrompt" outputs the patch piece to be used in the prompt.
+  // # --defines the context strategy for the generative task
   const patchBuilder = buildPatchPrompt;
   const filteredFiles = files.filter((file) => filterFile(file));
   // add token length metadata to each file
@@ -403,7 +404,9 @@ export const reviewChanges = async (
     }
   });
 
-  console.log(`files within limits: ${patchesWithinModelLimit.length}`);
+  console.log(
+    `@reviewChanges files within limits: ${patchesWithinModelLimit.length}`
+  );
   const withinLimitsPatchGroups = processWithinLimitFiles(
     patchesWithinModelLimit,
     patchBuilder,
@@ -557,7 +560,9 @@ const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
   // The non-XML builder will always succeed.
   for (const { convoBuilder, responseBuilder } of builders) {
     try {
-      console.log(`Trying with convoBuilder: ${convoBuilder.name}.`);
+      console.log(
+        `@reviewChangesRetry Trying with convoBuilder: ${convoBuilder.name}.`
+      );
       return await reviewChanges(files, convoBuilder, responseBuilder);
     } catch (error) {
       console.log(
@@ -602,7 +607,30 @@ export const processPullRequest = async (
     })
   );
 
-  const addDocsToStructuredComments = async (suggestion: any[]) => {
+  const owner = payload.repository.owner.login;
+  const repoName = payload.repository.name;
+  const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
+  const reviewComments = await reviewChangesRetry(filteredFiles, [
+    // convoBuilder takes a patch and returns a chat history object for chat completion. The chat history object has items with role "system", with a prompt for the LLM, and "user", with the patch and .
+    // responseBuilder takes the feedback (list of LLM responses) and returns a structured response (comment + structured feedback)
+    {
+      convoBuilder: getXMLReviewPrompt,
+      responseBuilder: curriedXMLResponseBuilder,
+    },
+    {
+      convoBuilder: getReviewPrompt,
+      responseBuilder: basicResponseBuilder,
+    },
+  ]);
+
+  // loop through reviewComments
+  console.log("reviewComments", reviewComments);
+
+  // use generative AI to add docstrings to the suggested code changes or edit the existing docstring
+  // loop through reviewComments.structuredComments and edit code tag with the new docstring if the new lines include the entire function, or make inline comments if the functon header is not within reach.
+
+  // TODO: The inline comments added below do not necessarily add comments to the function header.
+  const addDocsToSuggestion = async (suggestion: any[]) => {
     const response = await groq.chat.completions.create({
       model: GROQ_MODEL,
       temperature: 0,
@@ -621,31 +649,9 @@ export const processPullRequest = async (
     return response.choices[0].message;
   };
 
-  const owner = payload.repository.owner.login;
-  const repoName = payload.repository.name;
-  const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
-  const reviewComments = await reviewChangesRetry(filteredFiles, [
-    // convoBuilder takes a patch and returns a chat history object for chat completion.
-    // The chat history object has items with role "system" and "user".
-    // responseBuilder takes the feedback (list of LLM responses) and returns a structured response (comment + structured feedback)
-    {
-      convoBuilder: getXMLReviewPrompt,
-      responseBuilder: curriedXMLResponseBuilder,
-    },
-    {
-      convoBuilder: getReviewPrompt,
-      responseBuilder: basicResponseBuilder,
-    },
-  ]);
-
-  // loop through reviewComments
-  console.log("reviewComments", reviewComments);
-
-  // use generative AI to add docstrings to the suggested code changes or edit the existing docstring
-  // loop through reviewComments.structuredComments and edit code tag with the new docstring if the new lines include the entire function, or make inline comments if the functon header is not within reach.
   await Promise.all(
     reviewComments.structuredComments.map(async (review) => {
-      const commentedCode = await addDocsToStructuredComments(review);
+      const commentedCode = await addDocsToSuggestion(review);
       // replace the code tag with the commented code
       // review.code = commentedCode;
     })
