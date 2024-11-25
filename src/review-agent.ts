@@ -623,41 +623,6 @@ export const processPullRequest = async (
     },
   ]);
 
-  // loop through reviewComments
-  console.log("reviewComments", reviewComments);
-
-  // use generative AI to add docstrings to the suggested code changes or edit the existing docstring
-  // loop through reviewComments.structuredComments and edit code tag with the new docstring if the new lines include the entire function, or make inline comments if the functon header is not within reach.
-
-  // TODO: The inline comments added below do not necessarily add comments to the function header.
-  const addDocsToSuggestion = async (suggestion: any[]) => {
-    const response = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Your responsibility is to add documentation to code suggestions. The following JSON object contains: description of a change, a comment and the code that implements the change. Add documentation to the code suggestions if the code includes the entire function, or make inline comments if the functon header is not within reach. In your response, include only the [code:] block of the PRSuggestionImpl object. Include no preface text at all, only the necessary comments in the code block.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify(suggestion),
-        },
-      ],
-    });
-    return response.choices[0].message;
-  };
-
-  await Promise.all(
-    reviewComments.structuredComments.map(async (review) => {
-      const commentedCode = await addDocsToSuggestion(review);
-      // replace the code tag with the commented code
-      // review.code = commentedCode;
-    })
-  );
-
-  console.log("reviewComments after adding docs");
   console.dir({ reviewComments }, { depth: null });
   let filteredInlineComments: CodeSuggestion[] = [];
   if (includeSuggestions) {
