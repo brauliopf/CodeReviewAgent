@@ -5,8 +5,11 @@ import * as http from "http";
 import { App } from "octokit"; // github sdk
 import { Review } from "./constants";
 import { env } from "./env";
-import { processPullRequest } from "./review-agent";
+import { filterFile, processPullRequest } from "./review-agent";
 import { applyReview } from "./reviews";
+import { listAllFiles } from "./github";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { Pinecone } from "@pinecone-database/pinecone";
 
 // This creates a new instance of the Octokit App class.
 const reviewApp = new App({
@@ -77,9 +80,157 @@ async function handlePullRequestOpened({
   }
 }
 
-// This sets up a webhook event listener. When your app receives a webhook event from GitHub with a `X-GitHub-Event` header value of `pull_request` and an `action` payload value of `opened`, it calls the `handlePullRequestOpened` event handler that is defined above.
+/**
+ * Handle the event when a repository is added to the installation.
+ * Assumes main branch is called "main"
+ */
+async function handleRepositoriesAdded({
+  octokit,
+  payload,
+}: {
+  octokit: Octokit;
+  payload: WebhookEventMap["installation_repositories"];
+}) {
+  console.log(
+    "@handleInstallationRepositoriesAdded installation_repositories.added"
+  );
+
+  // Get filepaths
+  let filepaths: { [key: string]: string[] } = {};
+  for (const repo of payload.repositories_added) {
+    let temp_filepaths: string[] = [];
+    const owner = payload.installation.account.login;
+    const repoName = repo.name;
+    const branch = "main";
+    temp_filepaths = await listAllFiles({
+      octokit,
+      owner,
+      repository: repoName,
+      branch,
+    });
+
+    // Filter out ignorable files
+    filepaths[repoName] = temp_filepaths.filter(filterFile);
+
+    // Embed repository
+    const genAI = new GoogleGenerativeAI(env.GOOGLE_AI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "text-embedding-004",
+    });
+
+    const getEmbeddings = async (content: string) => {
+      console.log("getEmbeddings", content);
+      const result = await model.embedContent(content);
+      return result.embedding;
+    };
+
+    // Instantiate pinecone
+    const pc = new Pinecone({
+      apiKey: env.PINECONE_API_KEY,
+    });
+
+    // Access files
+    try {
+      for (const filepath of filepaths[repoName]) {
+        const fileContent = await octokit.rest.repos.getContent({
+          owner,
+          repo: repoName,
+          path: filepath,
+        });
+
+        console.log("got fileContent");
+        // Decode file content from base64 to utf-8
+        let decodedContent: string;
+        // Check if the response is an array or a single object
+        if (Array.isArray(fileContent.data)) {
+          throw new Error("Expected a single file, but received multiple.");
+        } else if (
+          fileContent.data.type === "file" &&
+          fileContent.status === 200
+        ) {
+          const content = fileContent.data.content;
+          decodedContent = Buffer.from(content, "base64").toString("utf-8");
+        } else {
+          throw new Error(
+            `Failed to get file content. File is not of type 'file' or status is not 200`
+          );
+        }
+
+        // Get embeddings
+        const embeddings = await getEmbeddings(decodedContent);
+
+        // Create a serverless index
+        const indexName = "pr-reviewer-index";
+
+        const checkIndexExists = async (indexName: string) => {
+          try {
+            await pc.describeIndex(indexName);
+            return true; // Index exists
+          } catch (error) {
+            if (error.message.includes("Index not found")) {
+              console.log("Checking if index exists! INDEX NOT FOUND");
+              return false; // Index does not exist
+            } else {
+              console.log("Index not found. Likely, it does not exist");
+            }
+          }
+        };
+
+        const indexExists = await checkIndexExists(indexName);
+
+        if (!indexExists) {
+          await pc.createIndex({
+            name: indexName,
+            dimension: 768,
+            metric: "cosine",
+            spec: {
+              serverless: {
+                cloud: "aws",
+                region: "us-east-1",
+              },
+            },
+          });
+        }
+
+        // Target the index where you'll store the vector embeddings
+        const index = pc.index(indexName);
+
+        // Each contains an 'id', the embedding 'values', and the original text as 'metadata'
+        const records = [
+          {
+            id: filepath,
+            values: embeddings.values,
+            metadata: { repo: repoName },
+          },
+        ];
+
+        // Upsert the vectors into the index
+        await index.namespace("the-example-namespace").upsert(records);
+
+        console.log("Upserted", filepath, "to", indexName);
+      }
+    } catch (exc) {
+      console.log("Failed to decode file and getEmbeddings", exc);
+    }
+  }
+}
+
+// Sets up a webhook event listener
+// When your app receives a webhook event from GitHub, check the header value for the `X-GitHub-Event`:
 //@ts-ignore
 reviewApp.webhooks.on("pull_request.opened", handlePullRequestOpened);
+reviewApp.webhooks.on(
+  "installation_repositories.added",
+  //@ts-ignore
+  handleRepositoriesAdded
+);
+
+// Middleware to log every webhook event
+// Runs after the specific webhook events
+//@ts-ignore
+reviewApp.webhooks.onAny((payload) => {
+  console.log("@onAny:Received webhook event:", payload);
+});
 
 const port = process.env.PORT || 3000;
 const reviewWebhook = `/api/review`;

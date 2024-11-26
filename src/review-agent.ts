@@ -45,12 +45,7 @@ export const reviewFiles = async (
   return feedback;
 };
 
-/**
- * Filter out files that are not relevant to the review: review extension, ignored files, etc
- * @param file - PRFile: the file to filter
- * @returns a boolean
- */
-const filterFile = (file: PRFile) => {
+export const filterFile = (filepath: String) => {
   const extensionsToIgnore = new Set<string>([
     "pdf",
     "png",
@@ -77,26 +72,35 @@ const filterFile = (file: PRFile) => {
 
   // Check black-lists and provide feedback
   // 1. Check if file is in ignore list
-  const filename = file.filename.toLowerCase().split("/").pop();
+  const filename = filepath.toLowerCase().split("/").pop();
   if (filename && filesToIgnore.has(filename)) {
-    console.log(`Filtering out ignored file: ${file.filename}`);
+    console.log(`Filtering out ignored file: ${filename}`);
     return false;
   }
   // 2. Check if file has no extension
-  const splitFilename = file.filename.toLowerCase().split(".");
+  const splitFilename = filename.toLowerCase().split(".");
   if (splitFilename.length <= 1) {
-    console.log(`Filtering out file with no extension: ${file.filename}`);
+    console.log(`Filtering out file with no extension: ${filename}`);
     return false;
   }
   // 3. Check if file has ignored extension
   const extension = splitFilename.pop()?.toLowerCase();
   if (extension && extensionsToIgnore.has(extension)) {
     console.log(
-      `Filtering out file with ignored extension: ${file.filename} (.${extension})`
+      `Filtering out file with ignored extension: ${filename} (.${extension})`
     );
     return false;
   }
   return true;
+};
+
+/**
+ * Filter out files that are not relevant to the review: review extension, ignored files, etc
+ * @param file - PRFile: the file to filter
+ * @returns a boolean
+ */
+const filterPRFile = (file: PRFile) => {
+  return filterFile(file.filename);
 };
 
 const groupFilesByExtension = (files: PRFile[]): Map<string, PRFile[]> => {
@@ -381,7 +385,7 @@ export const reviewChanges = async (
   // # "buildPatchPrompt" outputs the patch piece to be used in the prompt.
   // # --defines the context strategy for the generative task
   const patchBuilder = buildPatchPrompt;
-  const filteredFiles = files.filter((file) => filterFile(file));
+  const filteredFiles = files.filter((file) => filterPRFile(file));
   // add token length metadata to each file
   filteredFiles.map((file) => {
     file.patchTokenLength = getTokenLength(patchBuilder(file));
@@ -590,7 +594,7 @@ export const processPullRequest = async (
   includeSuggestions = false
 ) => {
   console.dir({ files }, { depth: null });
-  const filteredFiles = files.filter((file) => filterFile(file));
+  const filteredFiles = files.filter((file) => filterPRFile(file));
   console.dir({ filteredFiles }, { depth: null });
   if (filteredFiles.length == 0) {
     console.log(
