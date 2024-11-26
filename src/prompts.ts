@@ -160,7 +160,16 @@ export const getReviewPrompt = (diff: string): ChatCompletionMessageParam[] => {
  * @param diff - string: the diff of the PR (old vs new)
  * @returns an array of ChatCompletionMessageParam
  */
-export const getXMLReviewPrompt = async (
+export const getXMLReviewPrompt = (
+  diff: string
+): ChatCompletionMessageParam[] => {
+  return [
+    { role: "system", content: XML_PR_REVIEW_PROMPT },
+    { role: "user", content: diff },
+  ];
+};
+
+export const getXMLReviewPrompt_Async = async (
   diff: string
 ): Promise<ChatCompletionMessageParam[]> => {
   //
@@ -189,6 +198,7 @@ export const getXMLReviewPrompt = async (
   };
   const embeddings = await getEmbeddings(diff);
 
+  // TODO: use repo name as namespace
   const queryResponse = await index.namespace("the-example-namespace").query({
     vector: embeddings.values,
     topK: 1,
@@ -201,6 +211,7 @@ export const getXMLReviewPrompt = async (
 
   return [
     { role: "system", content: XML_PR_REVIEW_PROMPT },
+    // TODO: Add retrieved data here
     { role: "user", content: diff },
   ];
 };
