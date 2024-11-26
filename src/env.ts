@@ -9,6 +9,8 @@ export const env = {
   GITHUB_PRIVATE_KEY: process.env.GITHUB_PRIVATE_KEY,
   GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET,
   GROQ_API_KEY: process.env.GROQ_API_KEY,
+  GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY,
+  PINECONE_API_KEY: process.env.PINECONE_API_KEY,
 } as const;
 
 let valid = true;
