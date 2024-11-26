@@ -119,7 +119,6 @@ async function handleRepositoriesAdded({
     });
 
     const getEmbeddings = async (content: string) => {
-      console.log("getEmbeddings", content);
       const result = await model.embedContent(content);
       return result.embedding;
     };
@@ -138,7 +137,6 @@ async function handleRepositoriesAdded({
           path: filepath,
         });
 
-        console.log("got fileContent");
         // Decode file content from base64 to utf-8
         let decodedContent: string;
         // Check if the response is an array or a single object
@@ -168,7 +166,6 @@ async function handleRepositoriesAdded({
             return true; // Index exists
           } catch (error) {
             if (error.message.includes("Index not found")) {
-              console.log("Checking if index exists! INDEX NOT FOUND");
               return false; // Index does not exist
             } else {
               console.log("Index not found. Likely, it does not exist");
@@ -209,6 +206,7 @@ async function handleRepositoriesAdded({
 
         console.log("Upserted", filepath, "to", indexName);
       }
+      console.log("Done with all files in", repoName);
     } catch (exc) {
       console.log("Failed to decode file and getEmbeddings", exc);
     }
@@ -228,9 +226,7 @@ reviewApp.webhooks.on(
 // Middleware to log every webhook event
 // Runs after the specific webhook events
 //@ts-ignore
-reviewApp.webhooks.onAny((payload) => {
-  console.log("@onAny:Received webhook event:", payload);
-});
+// reviewApp.webhooks.onAny((payload) => {});
 
 const port = process.env.PORT || 3000;
 const reviewWebhook = `/api/review`;
