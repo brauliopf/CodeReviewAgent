@@ -154,9 +154,6 @@ async function handleRepositoriesAdded({
           );
         }
 
-        // Get embeddings
-        const embeddings = await getEmbeddings(decodedContent);
-
         // Create a serverless index
         const indexName = "pr-reviewer-index";
 
@@ -187,22 +184,35 @@ async function handleRepositoriesAdded({
               },
             },
           });
+
+          // Wait for new index to boot up
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         }
 
         // Target the index where you'll store the vector embeddings
         const index = pc.index(indexName);
+
+        // Get embeddings
+        const embeddings = await getEmbeddings(
+          `Filepath:${filepath}\n${decodedContent}`
+        );
 
         // Each contains an 'id', the embedding 'values', and the original text as 'metadata'
         const records = [
           {
             id: filepath,
             values: embeddings.values,
-            metadata: { repo: repoName },
+            metadata: {
+              filepath: filepath,
+              filename: filepath.split("/")[-1],
+              extension: filepath.split(".")[-1],
+            },
           },
         ];
 
         // Upsert the vectors into the index
-        await index.namespace("the-example-namespace").upsert(records);
+        const namespace = owner + "/" + repoName;
+        await index.namespace(namespace).upsert(records);
 
         console.log("Upserted", filepath, "to", indexName);
       }

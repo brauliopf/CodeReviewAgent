@@ -6,6 +6,9 @@ import {
   smarterContextPatchStrategy,
 } from "./context/review";
 import { GROQ_MODEL, type GroqChatModel } from "./llms/groq";
+import { Pinecone } from "@pinecone-database/pinecone";
+import { env } from "./env";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const ModelsToTokenLimits: Record<GroqChatModel, number> = {
   "mixtral-8x7b-32768": 32768,
@@ -52,7 +55,9 @@ Don't repeat the prompt in the answer, and avoid outputting the 'type' and 'desc
 
 Think through your suggestions and make exceptional improvements.`;
 
-export const XML_PR_REVIEW_PROMPT = `As the PR-Reviewer AI model, you are tasked to analyze git pull requests across any programming language and provide comprehensive and precise code enhancements. Keep your focus on the new code modifications indicated by '+' lines in the PR. Your feedback should hunt for code issues, opportunities for performance enhancement, security improvements, and ways to increase readability. 
+export const XML_PR_REVIEW_PROMPT = `As the PR-Reviewer AI model, you are tasked to analyze git pull requests across any programming language and provide comprehensive and precise code enhancements. You will be given a diff of the PR, and a piece of code from the github repository that is most relevant to the diff.
+
+Keep your focus on the new code modifications indicated by '+' lines in the PR. Your feedback should hunt for code issues, opportunities for performance enhancement, security improvements, and ways to increase readability. 
 
 Ensure your suggestions are novel and haven't been previously incorporated in the '+' lines of the PR code. Refrain from proposing enhancements that add docstrings, type hints, or comments. Your recommendations should strictly target the '+' lines without suggesting the need for complete context such as the whole repo or codebase.
 
@@ -155,9 +160,45 @@ export const getReviewPrompt = (diff: string): ChatCompletionMessageParam[] => {
  * @param diff - string: the diff of the PR (old vs new)
  * @returns an array of ChatCompletionMessageParam
  */
-export const getXMLReviewPrompt = (
+export const getXMLReviewPrompt = async (
   diff: string
-): ChatCompletionMessageParam[] => {
+): Promise<ChatCompletionMessageParam[]> => {
+  //
+  // Instantiate pinecone
+  const pc = new Pinecone({
+    apiKey: env.PINECONE_API_KEY,
+  });
+
+  const index = pc.index(
+    "pr-reviewer-index",
+    "https://pr-reviewer-index-kueduco.svc.aped-4627-b74a.pinecone.io"
+  );
+
+  // get embeddings to current patch file
+  // Embed repository
+  const genAI = new GoogleGenerativeAI(env.GOOGLE_AI_API_KEY);
+  // TODO: experiment with different embedding models
+  const model = genAI.getGenerativeModel({
+    model: "text-embedding-004",
+  });
+
+  console.log("getXMLReviewPrompt: Getting embeddings -", diff);
+  const getEmbeddings = async (content: string) => {
+    const result = await model.embedContent(content);
+    return result.embedding;
+  };
+  const embeddings = await getEmbeddings(diff);
+
+  const queryResponse = await index.namespace("the-example-namespace").query({
+    vector: embeddings.values,
+    topK: 1,
+    includeMetadata: true,
+    filter: {
+      repo: { $eq: "discord_next_app" },
+    },
+  });
+  console.log(queryResponse);
+
   return [
     { role: "system", content: XML_PR_REVIEW_PROMPT },
     { role: "user", content: diff },

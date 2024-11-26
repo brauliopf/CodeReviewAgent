@@ -618,6 +618,7 @@ export const processPullRequest = async (
     // convoBuilder takes a patch and returns a chat history object for chat completion. The chat history object has items with role "system", with a prompt for the LLM, and "user", with the patch and .
     // responseBuilder takes the feedback (list of LLM responses) and returns a structured response (comment + structured feedback)
     {
+      // @ts-ignore -- getXMLReviewPrompt returns a promise of ChatCompletionMessageParam[]
       convoBuilder: getXMLReviewPrompt,
       responseBuilder: curriedXMLResponseBuilder,
     },
