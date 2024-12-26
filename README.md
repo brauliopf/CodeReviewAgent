@@ -12,7 +12,7 @@ This is a GitHub App that reviews pull requests and submits reviews with AI.
 ngrok http 3000
 ```
 
-Here you'll see a URL in the format of `https://<random>.ngrok.app`. Make sure to save this URL as you'll need it to configure your GitHub App.
+Here you'll see a URL in the format of `https://<random>.ngrok.app`. You'll need this URL to configure your GitHub App.
 
 3. Create a new [GitHub App here](https://github.com/settings/apps)
 
@@ -39,8 +39,8 @@ Here you'll see a URL in the format of `https://<random>.ngrok.app`. Make sure t
 4. Clone the repo
 
 ```
-git clone https://github.com/CoderAgent/SecureAgent
-cd SecureAgent
+git clone https://github.com/brauliopf/CodeReviewAgent
+cd CodeReviewAgent
 ```
 
 5. Install dependencies
@@ -64,13 +64,14 @@ GROQ_API_KEY=<your-groq-api-key>
 
 Make sure your GITHUB_PRIVATE_KEY is formatted correctly, with the "--- BEGIN RSA PRIVATE KEY ---" and "--- END RSA PRIVATE KEY ---" lines, and is enclosed in quotes.
 
-8. Within the `SecureAgent` directory in your IDE, run the code with the following command:
+8. Within the `CodeReviewAgent` directory in your IDE, run the code with the following command:
 
 ```
 npm run start
 ```
 
 9. Create a pull request on one of your repositories and watch the review agent submit a review!
-  - Make sure to create the pull request on a repository that your GitHub app has access to.
-  - Make sure the pull request has at least one changed file that is supported by the review agent. The following file extensions are ignored: ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".mp3", ".md", ".json", ".env", ".toml", and ".svg".
-  - You will have to create new pull requests each time to test the review agent, as it will not work on the same pull request twice.
+
+- Make sure to create the pull request on a repository that your GitHub app has access to.
+- Make sure the pull request has at least one changed file that is supported by the review agent. The following file extensions are ignored: ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".mp3", ".md", ".json", ".env", ".toml", and ".svg".
+- You will have to create new pull requests each time to test the review agent, as it will not work on the same pull request twice.

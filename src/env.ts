@@ -2,6 +2,7 @@ import * as dotenv from "dotenv";
 import { createPrivateKey } from "crypto";
 import chalk from "chalk";
 
+// Load environment variables
 dotenv.config();
 
 export const env = {
@@ -13,6 +14,8 @@ export const env = {
 
 let valid = true;
 
+// [key as keyof typeof env]: key in the union of keys of env
+// if env[key] is undefined, log woith chalk (styled terminal output)!
 for (const key in env) {
   if (!env[key as keyof typeof env]) {
     console.log(
@@ -24,6 +27,7 @@ for (const key in env) {
   }
 }
 
+// Validate GitHub private key
 try {
   createPrivateKey(env.GITHUB_PRIVATE_KEY);
 } catch (error) {
