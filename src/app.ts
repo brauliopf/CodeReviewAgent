@@ -35,14 +35,14 @@ const getChangesPerFile = async (payload: WebhookEventMap["pull_request"]) => {
   }
 };
 
-// This adds an event handler that your code will call later. When this event handler is called, it will log the event to the console. Then, it will use GitHub's REST API to add a comment to the pull request that triggered the event.
-async function handlePullRequestOpened({
+// Create function to handle incoming PR updates --event handler: Log the event + Add a comment to the PR using GitHub's REST API
+const handlePullRequestOpened = async ({
   octokit,
   payload,
 }: {
   octokit: Octokit;
   payload: WebhookEventMap["pull_request"];
-}) {
+}) => {
   console.log(
     `Received a pull request event for #${payload.pull_request.number}`
   );
@@ -66,9 +66,9 @@ async function handlePullRequestOpened({
   } catch (exc) {
     console.log(exc);
   }
-}
+};
 
-// This sets up a webhook event listener. When your app receives a webhook event from GitHub with a `X-GitHub-Event` header value of `pull_request` and an `action` payload value of `opened`, it calls the `handlePullRequestOpened` event handler that is defined above.
+// This sets up a webhook event listener (callback function) --When app receives a webhook event from GitHub with a `X-GitHub-Event` header value of `pull_request` and an `action` payload value of `opened`, it calls the `handlePullRequestOpened` event handler.
 //@ts-ignore
 reviewApp.webhooks.on("pull_request.opened", handlePullRequestOpened);
 
@@ -76,7 +76,7 @@ const port = process.env.PORT || 3000;
 const reviewWebhook = `/api/review`;
 
 const reviewMiddleware = createNodeMiddleware(reviewApp.webhooks, {
-  path: "/api/review",
+  path: reviewWebhook,
 });
 
 const server = http.createServer((req, res) => {
@@ -88,7 +88,11 @@ const server = http.createServer((req, res) => {
   }
 });
 
-// This creates a Node.js server that listens for incoming HTTP requests (including webhook payloads from GitHub) on the specified port. When the server receives a request, it executes the `middleware` function that you defined earlier. Once the server is running, it logs messages to the console to indicate that it is listening.
+/**
+ * This creates a Node.js server that listens for incoming HTTP requests (including webhook payloads from GitHub).
+ * For each incoming request, the server executes a `middleware` function from the Octokit module, that can retrieve the webhook event requests from GitHub and accept redirects from the OAuth user web flow.
+ * Once the server is running, it logs messages to the console to indicate that it is listening.
+ */
 server.listen(port, () => {
   console.log(`Server is listening for events.`);
   console.log("Press Ctrl + C to quit.");
