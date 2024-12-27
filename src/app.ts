@@ -17,8 +17,10 @@ const reviewApp = new App({
   },
 });
 
-const getChangesPerFile = async (payload: WebhookEventMap["pull_request"]) => {
+const listUpsertedFiles = async (payload: WebhookEventMap["pull_request"]) => {
   try {
+    console.trace();
+    console.log("----/n- ", "listUpsertedFiles", typeof payload);
     const octokit = await reviewApp.getInstallationOctokit(
       payload.installation.id
     );
@@ -54,7 +56,7 @@ const handlePullRequestOpened = async ({
       fullName: payload.repository.full_name,
       url: payload.repository.html_url,
     });
-    const files = await getChangesPerFile(payload);
+    const files = await listUpsertedFiles(payload);
     const review: Review = await processPullRequest(
       octokit,
       payload,
