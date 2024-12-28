@@ -81,7 +81,9 @@ const filterFile = (file: PRFile) => {
   }
   const extension = splitFilename.pop()?.toLowerCase();
   if (extension && extensionsToIgnore.has(extension)) {
-    console.log(`Filtering out file with ignored extension: ${file.filename} (.${extension})`);
+    console.log(
+      `Filtering out file with ignored extension: ${file.filename} (.${extension})`
+    );
     return false;
   }
   return true;
@@ -305,12 +307,19 @@ const convertPRSuggestionToComment = (
   return comments;
 };
 
+/**
+ * Constructs an XML response for a pull request review
+ * @param owner - string: the owner of the repository
+ * @param repoName - string: the name of the repository
+ * @param feedbacks - string[]: the feedbacks from the review
+ * @returns a BuilderResponse
+ */
 const xmlResponseBuilder = async (
   owner: string,
   repoName: string,
   feedbacks: string[]
 ): Promise<BuilderResponse> => {
-  console.log("IN XML RESPONSE BUILDER");
+  console.log("@xmlResponseBuilder");
   const parsedXMLSuggestions = await processXMLSuggestions(feedbacks);
   const comments = convertPRSuggestionToComment(
     owner,
@@ -321,6 +330,13 @@ const xmlResponseBuilder = async (
   return { comment: commentBlob, structuredComments: parsedXMLSuggestions };
 };
 
+/**
+ * (curried function --a function that takes multiple arguments one at a time, returning a new function for each argument received)
+ * Custom function for repo name and owner, to build the XML response from feedbacks.
+ * @param owner - string: the owner of the repository
+ * @param repoName - the name of the repository
+ * @returns a function that takes in feedbacks and returns a BuilderResponse
+ */
 const curriedXmlResponseBuilder = (owner: string, repoName: string) => {
   return (feedbacks: string[]) =>
     xmlResponseBuilder(owner, repoName, feedbacks);
@@ -458,11 +474,19 @@ export const generateInlineComments = async (
   }
 };
 
-const preprocessFile = async (
+/**
+ * Get file content change from old version to current version in the PR. If deleted (created), shows NULL.
+ * - Return: Undefined!
+ * - Side-effect: Updates the old_contents and current_contents properties of the file object.
+ */
+const getFileContentUpdate = async (
   octokit: Octokit,
   payload: WebhookEventMap["pull_request"],
   file: PRFile
 ) => {
+  console.log(`@getFileContentUpdate: ${file.filename}`);
+  // base: PR was sent to it
+  // head: where the PR is currently
   const { base, head } = payload.pull_request;
   const baseBranch: BranchDetails = {
     name: base.ref,
@@ -474,7 +498,8 @@ const preprocessFile = async (
     sha: head.sha,
     url: payload.pull_request.url,
   };
-  // Handle scenario where file does not exist!!
+
+  // Get old and current content --Handle scenario where file does not exist
   const [oldContents, currentContents] = await Promise.all([
     getGitFile(octokit, payload, baseBranch, file.filename),
     getGitFile(octokit, payload, currentBranch, file.filename),
@@ -513,24 +538,38 @@ export const processPullRequest = async (
   files: PRFile[],
   includeSuggestions = false
 ) => {
-  console.dir({ files }, { depth: null });
+  console.log(
+    "@processPullRequest\n",
+    `* payload PR: ${Object.keys(payload.pull_request)}`
+  );
+  console.log(
+    files.map(
+      (file) =>
+        `${file.filename} (${file.status}). #${file.additions}/${file.changes} additions.`
+    )
+  );
   const filteredFiles = files.filter((file) => filterFile(file));
-  console.dir({ filteredFiles }, { depth: null });
+
   if (filteredFiles.length == 0) {
-    console.log("Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md");
+    console.log(
+      "Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md"
+    );
     return {
       review: null,
       suggestions: [],
     };
   }
+
   await Promise.all(
     filteredFiles.map((file) => {
-      return preprocessFile(octokit, payload, file);
+      return getFileContentUpdate(octokit, payload, file);
     })
   );
+
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
+
   if (includeSuggestions) {
     const reviewComments = await reviewChangesRetry(filteredFiles, [
       {

@@ -19,8 +19,8 @@ const reviewApp = new App({
 
 const listUpsertedFiles = async (payload: WebhookEventMap["pull_request"]) => {
   try {
-    console.trace();
-    console.log("----/n- ", "listUpsertedFiles", typeof payload);
+    console.log("@listUpsertedFiles/n");
+    console.log("* input:", Object.keys(payload).join(", "));
     const octokit = await reviewApp.getInstallationOctokit(
       payload.installation.id
     );
@@ -29,7 +29,11 @@ const listUpsertedFiles = async (payload: WebhookEventMap["pull_request"]) => {
       repo: payload.repository.name,
       pull_number: payload.pull_request.number,
     });
-    console.dir({ files }, { depth: null });
+    console.log(
+      "* filenames:",
+      files.map((item) => item.filename)
+    );
+    console.log("* sample output:", files[0]);
     return files;
   } catch (exc) {
     console.log("exc");
@@ -46,6 +50,7 @@ const handlePullRequestOpened = async ({
   payload: WebhookEventMap["pull_request"];
 }) => {
   console.log(
+    "@handlePullRequestOpened\n",
     `Received a pull request event for #${payload.pull_request.number}`
   );
   // const reposWithInlineEnabled = new Set<number>([601904706, 701925328]);
@@ -61,9 +66,9 @@ const handlePullRequestOpened = async ({
       octokit,
       payload,
       files,
-      true
+      true // include suggestions
     );
-    await applyReview({ octokit, payload, review });
+    // await applyReview({ octokit, payload, review });
     console.log("Review Submitted");
   } catch (exc) {
     console.log(exc);
