@@ -518,7 +518,21 @@ const getFileContentUpdate = async (
   }
 };
 
+/**
+ * For each file, try the review process with `reviewChanges`.
+ * reviewChanges will try first the XML builder, and fallback to the text builder, if necessary.
+ * reviewChanges defines what context to use to assess the changes to a file:
+ * - If there is a parser that interprets functions for a given code (programming language), use function context
+ * - If there is not a parser, use range of 5 lines above and below modified line.
+ * @param files - PRFile[]: the files edited in the PR
+ * @param builders - Builders[]: the builders to try
+ * @returns the output of the builder that succeeds (aka reviewed changes) for each file
+ */
 const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
+  // By definition, the for loop will loop through XML and then non-XML.
+  // If it succeeds with the XML builder, it will return early and not try the non-XML builder.
+  // If it fails with the XML builder, it will log an error and fall back to the non-XML builder.
+  // The non-XML builder will always succeed.
   for (const { convoBuilder, responseBuilder } of builders) {
     try {
       console.log(`Trying with convoBuilder: ${convoBuilder.name}.`);

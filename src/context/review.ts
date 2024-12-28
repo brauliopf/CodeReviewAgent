@@ -185,6 +185,7 @@ const combineHunks = (
   return combinedHunk;
 };
 
+/** This function processes a file's patch, extracts hunks, and maps them to their corresponding enclosing function contexts. It handles errors gracefully by falling back to an expansion strategy when necessary. This allows for a more contextual understanding of the changes made in the patch, which can be useful for displaying or analyzing code changes. */
 const diffContextPerHunk = (file: PRFile, parser: AbstractParser) => {
   const updatedFile = diff.applyPatch(file.old_contents, file.patch);
   const patches = diff.parsePatch(file.patch);
