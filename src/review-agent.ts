@@ -81,7 +81,9 @@ const filterFile = (file: PRFile) => {
   }
   const extension = splitFilename.pop()?.toLowerCase();
   if (extension && extensionsToIgnore.has(extension)) {
-    console.log(`Filtering out file with ignored extension: ${file.filename} (.${extension})`);
+    console.log(
+      `Filtering out file with ignored extension: ${file.filename} (.${extension})`
+    );
     return false;
   }
   return true;
@@ -305,12 +307,19 @@ const convertPRSuggestionToComment = (
   return comments;
 };
 
+/**
+ * Constructs an XML response for a pull request review
+ * @param owner - string: the owner of the repository
+ * @param repoName - string: the name of the repository
+ * @param feedbacks - string[]: the feedbacks from the review
+ * @returns a BuilderResponse
+ */
 const xmlResponseBuilder = async (
   owner: string,
   repoName: string,
   feedbacks: string[]
 ): Promise<BuilderResponse> => {
-  console.log("IN XML RESPONSE BUILDER");
+  console.log("@xmlResponseBuilder");
   const parsedXMLSuggestions = await processXMLSuggestions(feedbacks);
   const comments = convertPRSuggestionToComment(
     owner,
@@ -321,6 +330,13 @@ const xmlResponseBuilder = async (
   return { comment: commentBlob, structuredComments: parsedXMLSuggestions };
 };
 
+/**
+ * (curried function --a function that takes multiple arguments one at a time, returning a new function for each argument received)
+ * Custom function for repo name and owner, to build the XML response from feedbacks.
+ * @param owner - string: the owner of the repository
+ * @param repoName - the name of the repository
+ * @returns a function that takes in feedbacks and returns a BuilderResponse
+ */
 const curriedXmlResponseBuilder = (owner: string, repoName: string) => {
   return (feedbacks: string[]) =>
     xmlResponseBuilder(owner, repoName, feedbacks);
@@ -458,11 +474,19 @@ export const generateInlineComments = async (
   }
 };
 
-const preprocessFile = async (
+/**
+ * Get file content change from old version to current version in the PR. If deleted (created), shows NULL.
+ * - Return: Undefined!
+ * - Side-effect: Updates the old_contents and current_contents properties of the file object.
+ */
+const getFileContentUpdate = async (
   octokit: Octokit,
   payload: WebhookEventMap["pull_request"],
   file: PRFile
 ) => {
+  console.log(`@getFileContentUpdate: ${file.filename}`);
+  // base: PR was sent to it
+  // head: where the PR is currently
   const { base, head } = payload.pull_request;
   const baseBranch: BranchDetails = {
     name: base.ref,
@@ -474,7 +498,8 @@ const preprocessFile = async (
     sha: head.sha,
     url: payload.pull_request.url,
   };
-  // Handle scenario where file does not exist!!
+
+  // Get old and current content --Handle scenario where file does not exist
   const [oldContents, currentContents] = await Promise.all([
     getGitFile(octokit, payload, baseBranch, file.filename),
     getGitFile(octokit, payload, currentBranch, file.filename),
@@ -493,7 +518,21 @@ const preprocessFile = async (
   }
 };
 
+/**
+ * For each file, try the review process with `reviewChanges`.
+ * reviewChanges will try first the XML builder, and fallback to the text builder, if necessary.
+ * reviewChanges defines what context to use to assess the changes to a file:
+ * - If there is a parser that interprets functions for a given code (programming language), use function context
+ * - If there is not a parser, use range of 5 lines above and below modified line.
+ * @param files - PRFile[]: the files edited in the PR
+ * @param builders - Builders[]: the builders to try
+ * @returns the output of the builder that succeeds (aka reviewed changes) for each file
+ */
 const reviewChangesRetry = async (files: PRFile[], builders: Builders[]) => {
+  // By definition, the for loop will loop through XML and then non-XML.
+  // If it succeeds with the XML builder, it will return early and not try the non-XML builder.
+  // If it fails with the XML builder, it will log an error and fall back to the non-XML builder.
+  // The non-XML builder will always succeed.
   for (const { convoBuilder, responseBuilder } of builders) {
     try {
       console.log(`Trying with convoBuilder: ${convoBuilder.name}.`);
@@ -513,24 +552,38 @@ export const processPullRequest = async (
   files: PRFile[],
   includeSuggestions = false
 ) => {
-  console.dir({ files }, { depth: null });
+  console.log(
+    "@processPullRequest\n",
+    `* payload PR: ${Object.keys(payload.pull_request)}`
+  );
+  console.log(
+    files.map(
+      (file) =>
+        `${file.filename} (${file.status}). #${file.additions}/${file.changes} additions.`
+    )
+  );
   const filteredFiles = files.filter((file) => filterFile(file));
-  console.dir({ filteredFiles }, { depth: null });
+
   if (filteredFiles.length == 0) {
-    console.log("Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md");
+    console.log(
+      "Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md"
+    );
     return {
       review: null,
       suggestions: [],
     };
   }
+
   await Promise.all(
     filteredFiles.map((file) => {
-      return preprocessFile(octokit, payload, file);
+      return getFileContentUpdate(octokit, payload, file);
     })
   );
+
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
+
   if (includeSuggestions) {
     const reviewComments = await reviewChangesRetry(filteredFiles, [
       {

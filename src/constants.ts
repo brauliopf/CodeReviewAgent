@@ -1,5 +1,6 @@
 import { Node } from "@babel/traverse";
 import { JavascriptParser } from "./context/language/javascript-parser";
+import { PythonParser } from "./context/language/python-parser";
 import { ChatCompletionMessageParam } from "groq-sdk/resources/chat/completions";
 
 export interface PRFile {
@@ -107,6 +108,7 @@ const EXTENSIONS_TO_PARSERS: Map<string, AbstractParser> = new Map([
   ["tsx", new JavascriptParser()],
   ["js", new JavascriptParser()],
   ["jsx", new JavascriptParser()],
+  ["py", new PythonParser()],
 ]);
 
 export const getParserForExtension = (filename: string) => {

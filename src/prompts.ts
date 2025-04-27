@@ -119,6 +119,9 @@ export const buildSuggestionPrompt = (file: PRFile) => {
   return `## ${file.filename}\n\n${patchWithLines}`;
 };
 
+/**
+ * Use smart context patch for edited files and title-only (raw patch) for new files. The smart patch is complex.
+ */
 export const buildPatchPrompt = (file: PRFile) => {
   if (file.old_contents == null) {
     return rawPatchStrategy(file);
